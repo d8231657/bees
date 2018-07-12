@@ -1,9 +1,9 @@
-/*bees2.0版 有支數 有兩種武器*/
+/*bees2.1版 有speed*/
 #include <graphics.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#define   DELAY 50       /*每圈delay ms*/
+#define   DELAY 500       /*每圈delay ms*/
 #define   HMB   40       /*蜜蜂數,對應變數r*/
 #define   HMG1  4        /*我方子彈數*/
 #define   HMG2  50       /*蜜蜂子彈數*/
@@ -41,8 +41,8 @@ void MAKE_WEAPON(int,int,int);
 
 struct WEAPON
 {
-	int x,y;
-	char life,type;
+	int x,y,type;
+	char life;
 }weapon;
 struct BEES              /*蜜蜂結構*/
 {
@@ -77,14 +77,14 @@ struct ro                /*蜜蜂移動路線結構*/
 	int x,y;            /*下次座標位移量(向量)*/
 }ro[HMR][HMSTEP];        /*存放攻擊路線array*/
 
-FILE *fp[12];            /*開檔用檔案指標*/
-void *app,*bp,*bp2,*bp2n,*bo1,*bo2,*bo3,*wl,*wd;	/*指向圖片buffer指標*/
+FILE *fp[13];            /*開檔用檔案指標*/
+void *app,*bp,*bp2,*bp2n,*bo1,*bo2,*bo3,*wl,*wd,*ws;/*指向圖片buffer指標*/
 long score=0,addscore=0; /*存放分數的變數*/
 char sbuf[40];          	/*存放分數字串*/
 int n=0,s=0,r=0,l=0,om=0,dela=DELAY,round=1,
     cos=10000,cog2=1000,dog2=800,coa=100,
     sou[HMS][MAXS],sp1=0,sp2=0,soun=1,ingame=1,
-    gamestatus=0,statuscounter=0;
+    gamestatus=0,statuscounter=0,hfapm=HFAPM;
 					/*   n:蜜蜂左移右移計數器*/
 					/*   s:蜜蜂左移右移旗標  */
 					/*   l:雷射旗標          */
@@ -102,7 +102,7 @@ int color[16]={0,1,2,3,4,5,20,7,56,57,58,59,60,61,62,63},bug;
 main()
 {
 	int i,j,k,drive=VGA,mode=VGAMED;
-	char filename[12][40]={"bees.sav",
+	char filename[13][40]={"bees.sav",
 					   "bees.rod",
 					   "bees.snd",
 					   "bees.bug",
@@ -113,7 +113,8 @@ main()
 					   "bees.bo3",
 					   "bees.ap",
 					   "beesl.img",
-					   "beesd.img"};
+					   "beesd.img",
+					   "beess.img"};
 	randomize();
 	initgraph(&drive,&mode,"");
 	if(graphresult()!=grOk)	/*啟動繪圖模式*/
@@ -126,7 +127,7 @@ main()
      setactivepage(0);
 	setvisualpage(1);
 	setbkcolor(0);
-	for(i=10;i<12;i++)
+	for(i=10;i<13;i++)
 	{
 		if((fp[i]=fopen(filename[i],"r+b"))==NULL)
 		{
@@ -137,10 +138,13 @@ main()
 	}
 	wl=(void *)malloc(imagesize(0,0,19,19));
 	wd=(void *)malloc(imagesize(0,0,19,19));
+	ws=(void *)malloc(imagesize(0,0,19,19));
 	fread(wl,imagesize(0,0,19,19),1,fp[10]);
 	fread(wd,imagesize(0,0,19,19),1,fp[11]);
+	fread(ws,imagesize(0,0,19,19),1,fp[12]);
 	fclose(fp[10]);
 	fclose(fp[11]);
+	fclose(fp[12]);
 	for(i=0;i<10;i++)
      {
           if((fp[i]=fopen(filename[i],"r+t"))==NULL)
@@ -303,13 +307,20 @@ main()
 				break;
 			case 7:
 				round++;             /*過關，增加難度*/
-				dela-=3;
-				coa-=10;
-				cog2-=100;
-				dog2-=10;
-				n=50;
-				s=0;
-				gamestatus=0;
+				if(round==11)
+				{
+					gamestatus=9;
+				}
+				else
+				{
+					dela-=3;
+					coa-=10;
+					cog2-=100;
+					dog2-=90;
+					n=50;
+					s=0;
+					gamestatus=0;
+				}
 				break;
 			case 8:
 				setcolor(EGA_RED);
@@ -381,6 +392,7 @@ main()
 	free(app);
 	free(wl);
 	free(wd);
+	free(ws);
      fcloseall();
      closegraph();
 }
@@ -615,7 +627,7 @@ void APMOV()
      {
           if(om>0)
           {
-               AP.x+=HFAPM;
+			AP.x+=hfapm;
                if(AP.x>=APR)
                {
                     AP.x=APR;
@@ -626,7 +638,7 @@ void APMOV()
           }
           else
           {
-               AP.x-=HFAPM;
+			AP.x-=hfapm;
                if(AP.x<=APL)
                {
                     AP.x=APL;
@@ -825,6 +837,7 @@ void APBOOM(void)        /*爆炸*/
 	statuscounter=0;
 	AP.active=0;
 	l=0;
+	hfapm=3;
 	sp1=5;
 	sp2=0;
 	return;
@@ -963,21 +976,42 @@ void WEAPON(void)
 	{
 		if((weapon.x>=AP.x-17)&&(weapon.x<=AP.x+17))
 		{
+			sp1=4;
+			sp2=2;
 			weapon.life=0;
-			l=weapon.type*2+1;
+			switch(weapon.type)
+			{
+				case 0:
+					l=1;
+					break;
+				case 1:
+					l=3;
+					break;
+				case 2:
+					hfapm++;
+					break;
+				default:
+					break;
+			}
 		}
 	}
 	if(weapon.y>GUNBOTTOM)
 	{
 		weapon.life=0;
 	}
-	if(weapon.type)
+	switch(weapon.type)
 	{
-		putimage(weapon.x-10,weapon.y-10,wd,COPY_PUT);
-	}
-	else
-	{
-		putimage(weapon.x-10,weapon.y-10,wl,COPY_PUT);
+		case 0:
+			putimage(weapon.x-10,weapon.y-10,wl,COPY_PUT);
+			break;
+		case 1:
+			putimage(weapon.x-10,weapon.y-10,wd,COPY_PUT);
+			break;
+		case 2:
+			putimage(weapon.x-10,weapon.y-10,ws,COPY_PUT);
+			break;
+		default:
+			break;
 	}
 }
 void MAKE_WEAPON(int c,int x,int y)
@@ -988,7 +1022,7 @@ void MAKE_WEAPON(int c,int x,int y)
 		{
 			weapon.x=x;
 			weapon.y=y;
-			weapon.type=random(2);
+			weapon.type=random(3);
 			weapon.life=1;
 		}
 	}
