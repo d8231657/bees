@@ -1,4 +1,4 @@
-/*bees1.1版 有爆炸 新式流程 武器實驗中(以星星當武器)*/
+/*bees2.0版 有支數 有兩種武器*/
 #include <graphics.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +9,7 @@
 #define   HMG2  50       /*蜜蜂子彈數*/
 #define   HMAPM 3        /*一次移動持續迴圈數*/
 #define   HFAPM 3        /*每迴圈移動像點數*/
-#define   HMADD 150      /*蜜蜂左右移動距離*/
+#define   HMADD 100      /*蜜蜂左右移動距離*/
 #define   APL   30       /*飛機左界*/
 #define   APR   609      /*飛機右界*/
 #define   BEESTOP -10    /*蜜蜂專用畫面頂，上下循環用*/
@@ -37,7 +37,13 @@ void SOUND(void);        /*輸出聲音*/
 void OUTPUT(void);       /*輸出畫面*/
 void STAR(void);         /*產生背景星星*/
 void WEAPON(void);
+void MAKE_WEAPON(int,int,int);
 
+struct WEAPON
+{
+	int x,y;
+	char life,type;
+}weapon;
 struct BEES              /*蜜蜂結構*/
 {
 	int x,y;            /*座標*/
@@ -71,13 +77,13 @@ struct ro                /*蜜蜂移動路線結構*/
 	int x,y;            /*下次座標位移量(向量)*/
 }ro[HMR][HMSTEP];        /*存放攻擊路線array*/
 
-FILE *fp[10];            /*開檔用檔案指標*/
-void *app,*bp,*bp2,*bp2n,*bo1,*bo2,*bo3;	/*指向圖片buffer指標*/
-long score=0;            /*存放分數的變數*/
+FILE *fp[12];            /*開檔用檔案指標*/
+void *app,*bp,*bp2,*bp2n,*bo1,*bo2,*bo3,*wl,*wd;	/*指向圖片buffer指標*/
+long score=0,addscore=0; /*存放分數的變數*/
 char sbuf[40];          	/*存放分數字串*/
-int n=0,s=0,r=0,l=3,om=0,dela=DELAY,round=1,
+int n=0,s=0,r=0,l=0,om=0,dela=DELAY,round=1,
     cos=10000,cog2=1000,dog2=800,coa=100,
-    sou[HMS][MAXS],sp1=0,sp2=0,soun=0,ingame=1,
+    sou[HMS][MAXS],sp1=0,sp2=0,soun=1,ingame=1,
     gamestatus=0,statuscounter=0;
 					/*   n:蜜蜂左移右移計數器*/
 					/*   s:蜜蜂左移右移旗標  */
@@ -96,18 +102,20 @@ int color[16]={0,1,2,3,4,5,20,7,56,57,58,59,60,61,62,63},bug;
 main()
 {
 	int i,j,k,drive=VGA,mode=VGAMED;
-	char filename[10][40]={"c:\\tc\\file\\bees.sav",
-					   "c:\\tc\\file\\bees.rod",
-					   "c:\\tc\\file\\bees.snd",
-					   "c:\\tc\\file\\bees.bug",
-					   "c:\\tc\\file\\bees.b2",
-					   "c:\\tc\\file\\bees.b2n",
-					   "c:\\tc\\file\\bees.bos",
-					   "c:\\tc\\file\\bees.bo2",
-					   "c:\\tc\\file\\bees.bo3",
-					   "c:\\tc\\file\\bees.ap"};
+	char filename[12][40]={"bees.sav",
+					   "bees.rod",
+					   "bees.snd",
+					   "bees.bug",
+					   "bees.b2",
+					   "bees.b2n",
+					   "bees.bos",
+					   "bees.bo2",
+					   "bees.bo3",
+					   "bees.ap",
+					   "beesl.img",
+					   "beesd.img"};
 	randomize();
-	initgraph(&drive,&mode,"c:\\tc");
+	initgraph(&drive,&mode,"");
 	if(graphresult()!=grOk)	/*啟動繪圖模式*/
      {
           printf("EGAVGA.BGI not found!\n\7\7");
@@ -117,7 +125,22 @@ main()
      }
      setactivepage(0);
 	setvisualpage(1);
-     setbkcolor(0);
+	setbkcolor(0);
+	for(i=10;i<12;i++)
+	{
+		if((fp[i]=fopen(filename[i],"r+b"))==NULL)
+		{
+			printf("%s not found!\n\7\7",filename[i]);
+			fcloseall();
+			exit(0);
+		}
+	}
+	wl=(void *)malloc(imagesize(0,0,19,19));
+	wd=(void *)malloc(imagesize(0,0,19,19));
+	fread(wl,imagesize(0,0,19,19),1,fp[10]);
+	fread(wd,imagesize(0,0,19,19),1,fp[11]);
+	fclose(fp[10]);
+	fclose(fp[11]);
 	for(i=0;i<10;i++)
      {
           if((fp[i]=fopen(filename[i],"r+t"))==NULL)
@@ -189,6 +212,7 @@ main()
      AP.x=320;
 	AP.y=getmaxy()-50;
 	AP.active=1;
+	weapon.life=0;
      for(i=0;i<HMG1;i++)           /*定我方子彈初值*/
      {
           GUN1[i].life=0;
@@ -245,7 +269,7 @@ main()
 						for(k=0;k<10;k++)
 						{
 							BEES[j*10+k].atc=0;     /*歸零攻擊狀態*/
-							BEES[j*10+k].x=k*40+20; /*設定座標*/
+							BEES[j*10+k].x=k*40+130; /*設定座標*/
 							BEES[j*10+k].y=j*30+20;
 						}
 					}
@@ -264,8 +288,9 @@ main()
 						BEES[j+3].life=3;
 						BEES[j+3].t=2;
 					}
-					n=0;
+					n=50;
 					r=HMB;
+					addscore=100;
 				}
 				gamestatus=6;
 				break;
@@ -282,7 +307,8 @@ main()
 				coa-=10;
 				cog2-=100;
 				dog2-=10;
-				n=s=0;
+				n=50;
+				s=0;
 				gamestatus=0;
 				break;
 			case 8:
@@ -326,8 +352,9 @@ main()
 			SHOOT2();                       /*蜜蜂射擊*/
 
 		GUNMOV();                       /*子彈移動*/
-		BOOM();                         /*判斷是否擊中*/
-		WEAPON();
+		BOOM();
+		if(weapon.life)					/*判斷是否擊中*/
+			WEAPON();
 		if(kbhit())
 		{
 			INPUT();                /*輸入*/
@@ -352,6 +379,8 @@ main()
 	free(bo2);
 	free(bo3);
 	free(app);
+	free(wl);
+	free(wd);
      fcloseall();
      closegraph();
 }
@@ -436,30 +465,42 @@ void SHOOT2(void)               /*蜜蜂射擊*/
 
 void SHOOT1(void)   /*飛機子彈*/
 {
-	int p;
-	if(l==2)      /*追蹤飛彈*/
+	int p,q;
+	switch(l)
 	{
-		for(p=0;(GUN1[p].life==1)&&(p<1);p++);  /*最多一發*/
-		if(p)                                   /*如沒有空格*/
-		{
-			return;
-		}
-	}
-	else
-	{
-		for(p=0;(GUN1[p].life==1)&&(p<2);p++);  /*最多二發*/
-		if(p==2)                                /*如沒有空格*/
-		{
-			return;
-		}
+		case 0:
+		case 1:
+			for(p=0;(GUN1[p].life==1)&&(p<2);p++);  /*最多二發*/
+			if(p==2)                                /*如沒有空格*/
+			{
+				return;
+			}
+			break;
+		case 2:/*追蹤飛彈*/
+			for(p=0;(GUN1[p].life==1)&&(p<1);p++);  /*最多一發*/
+			if(p)                                   /*如沒有空格*/
+			{
+				return;
+			}
+			break;
+		case 3:
+			for(p=0;(GUN1[p].life==1)&&(p<4);p++);
+			for(q=p+1;(GUN1[q].life==1)&&(q<4);q++);
+			if(q>=4)                                   /*如沒有空格*/
+			{
+				return;
+			}
+			break;
+		default:
+			break;
 	}
 	if(l==3)
 	{
-		GUN1[p].life=GUN1[p+2].life=1;
-		GUN1[p].l=GUN1[p+2].l=0;
-		GUN1[p].y=GUN1[p+2].y=AP.y-1;
+		GUN1[p].life=GUN1[q].life=1;
+		GUN1[p].l=GUN1[q].l=0;
+		GUN1[p].y=GUN1[q].y=AP.y-1;
 		GUN1[p].x=AP.x-15;
-		GUN1[p+2].x=AP.x+15;
+		GUN1[q].x=AP.x+15;
 	}
 	else
 	{
@@ -471,7 +512,8 @@ void SHOOT1(void)   /*飛機子彈*/
 		GUN1[p].ty=GUNTOP-1000;
 	}
      sp1=3;               /*設定音效*/
-     sp2=0;
+	sp2=0;
+	addscore--;
 }
 
 void MOVE_ADD()         /*蜜蜂移動左右迴圈*/
@@ -670,7 +712,9 @@ void BOOM()              /*擊中判斷*/
                               {
 							r--;
 							BEES[b].atc=0;
-                                   score+=100;  /*加分*/
+							score+=addscore;  /*加分*/
+							if(BEES[b].t==2)
+								MAKE_WEAPON(4,BEES[b].x,BEES[b].y);
                               }
                               GUN1[a].life=0;   /*清除子彈*/
                               sp1=2;            /*打死的音效*/
@@ -690,7 +734,9 @@ void BOOM()              /*擊中判斷*/
                                         BEES[b].life=0;
 								r--;
 								BEES[b].atc=0;
-                                        score+=100;
+								score+=addscore;
+								if(BEES[b].t==2)
+									MAKE_WEAPON(4,BEES[b].x,BEES[b].y);
                                         sp1=2;
                                         sp2=0;
                                    }
@@ -708,7 +754,7 @@ void BOOM()              /*擊中判斷*/
                                    {
 								r--;
 								BEES[b].atc=0;
-                                        score+=100;
+                                        score+=addscore;
                                         sp1=2;
                                         sp2=0;
                                    }
@@ -725,7 +771,7 @@ void BOOM()              /*擊中判斷*/
                               {
 							r--;
 							BEES[b].atc=0;
-                                   score+=100;
+                                   score+=addscore;
                               }
                               GUN1[a].life=0;
                               sp1=2;
@@ -763,7 +809,7 @@ void BOOM()              /*擊中判斷*/
 					{
 						r--;
 						BEES[a].atc=0;
-						score+=100;
+						score+=addscore;
 					}
 					APBOOM();
 					return;
@@ -778,6 +824,7 @@ void APBOOM(void)        /*爆炸*/
 	gamestatus=8;
 	statuscounter=0;
 	AP.active=0;
+	l=0;
 	sp1=5;
 	sp2=0;
 	return;
@@ -840,7 +887,7 @@ void OUTPUT(void)        /*輸出顯示*/
                switch(BEES[i].t)
                {
                     case 0:
-                         putimage(BEES[i].x-9,BEES[i].y-14,bp,COPY_PUT);
+					putimage(BEES[i].x-9,BEES[i].y-14,bp,COPY_PUT);
                          break;
                     case 1:
                          if(BEES[i].life==2)
@@ -876,7 +923,12 @@ void OUTPUT(void)        /*輸出顯示*/
 	fprintf(fp[0],"SCORE  %ld%c",score,'\0');
 	rewind(fp[0]);
 	fgets(sbuf,39,fp[0]);
-     outtextxy(0,0,sbuf);
+	outtextxy(0,0,sbuf);
+	rewind(fp[0]);
+	fprintf(fp[0],"PLAYER %d%c",AP.life,'\0');
+	rewind(fp[0]);
+	fgets(sbuf,39,fp[0]);
+	outtextxy(0,10,sbuf);
 }
 
 void STAR(void)
@@ -906,18 +958,38 @@ void STAR(void)
 void WEAPON(void)
 {
 	int i,w;
-	w=SR-SL+1;
-	for(i=0;i<w;i++)
+	weapon.y+=3;
+	if(weapon.y>=AP.y)
 	{
-		if(!star[i].c)
+		if((weapon.x>=AP.x-17)&&(weapon.x<=AP.x+17))
 		{
-			if(star[i].y==AP.y)
-			{
-				if((i>=AP.x-17)&&(i<=AP.x+17))
-				{
-					l=3;
-				}
-			}
+			weapon.life=0;
+			l=weapon.type*2+1;
+		}
+	}
+	if(weapon.y>GUNBOTTOM)
+	{
+		weapon.life=0;
+	}
+	if(weapon.type)
+	{
+		putimage(weapon.x-10,weapon.y-10,wd,COPY_PUT);
+	}
+	else
+	{
+		putimage(weapon.x-10,weapon.y-10,wl,COPY_PUT);
+	}
+}
+void MAKE_WEAPON(int c,int x,int y)
+{
+	if(!weapon.life)
+	{
+		if(!random(c))
+		{
+			weapon.x=x;
+			weapon.y=y;
+			weapon.type=random(2);
+			weapon.life=1;
 		}
 	}
 }
