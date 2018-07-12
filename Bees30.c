@@ -1,4 +1,10 @@
-/*bees2.1版 有speed*/
+/*bees3.0公開版 請勿用於商業用途 2003.09.16*/
+
+/*bees1.0版 無爆炸 舊式流程*/
+/*bees1.1版 (bees2.c)有爆炸 新式流程 武器實驗中(以星星當武器)*/
+/*bees2.0版 有支數 有兩種武器*/
+/*bees2.1版 有speed，修正超過3關攻擊率反降、10關的當機的bug*/
+/*bees3.0版 顯示關卡，修正死掉還能那寶物bug，有加台*/
 #include <graphics.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +27,13 @@
 #define   SR    640      /*背景右界*/
 #define   HMR   3        /*蜜蜂攻擊路線總數*/
 #define   HMSTEP 206     /*攻擊路線步數*/
-#define   HMS   6        /*音效總數，1-5，0為無聲*/
+#define   HMS   8        /*音效總數，0 無聲
+                                                           1 敵人飛下
+                                                           2 擊落敵人
+                                                           3 發射
+                                                           4 吸收雷射、拿到寶物
+                                                           5 飛機爆炸
+                                                           6 加台*/
 #define   MAXS  50       /*音效最長上限*/
 
 void ATC(void);          /*設定一蜜蜂攻擊*/
@@ -36,8 +48,10 @@ void APBOOM(void);       /*擊中飛機*/
 void SOUND(void);        /*輸出聲音*/
 void OUTPUT(void);       /*輸出畫面*/
 void STAR(void);         /*產生背景星星*/
-void WEAPON(void);
-void MAKE_WEAPON(int,int,int);
+void WEAPON(void);		/*寶物移動判斷*/
+void MAKE_WEAPON(int,int,int);	/*產生寶物*/
+void SCORE_UP(void);	/*加分和加台*/
+void SOUND_CALL(int);
 
 struct WEAPON
 {
@@ -54,7 +68,7 @@ struct BEES              /*蜜蜂結構*/
 struct AP                /*飛機及子彈結構*/
 {
 	int x,y;            /*座標*/
-	char life,active;   /*隻數*/
+	char life,active;   /*隻數，狀態：0 死掉，1 可移動，2 可移動發射*/
 }AP;
 struct GUN1              /*我方子彈*/
 {
@@ -97,7 +111,8 @@ int n=0,s=0,r=0,l=0,om=0,dela=DELAY,round=1,
 					/*   sp1:指向欲撥放之聲音*/
 					/*   sp2:指向聲音之step	*/
 					/*  soun:聲音開關		*/
-int color[16]={0,1,2,3,4,5,20,7,56,57,58,59,60,61,62,63},bug;
+int color[16]={0,1,2,3,4,5,6,7,56,57,58,59,60,61,62,63},bug;
+int sound_level[HMS]={7,6,4,4,4,2,1};
 
 main()
 {
@@ -238,11 +253,14 @@ main()
 				}
 				gamestatus=1;
 				break;
-			case 1:
+			case 1:	/*等待50圈*/
 				if(statuscounter==50)
-				gamestatus=2;
+				{
+					SOUND_CALL(7);
+					gamestatus=2;
+				}
 				break;
-			case 2:
+			case 2:	/*顯示關數50圈*/
 				rewind(fp[0]);
 				fprintf(fp[0],"ROUND %d%c",round,'\0');
 				rewind(fp[0]);
@@ -251,17 +269,17 @@ main()
 				if(statuscounter==100)
 				gamestatus=3;
 				break;
-			case 3:
+			case 3:	/*再等50圈*/
 				if(statuscounter==150)
 				gamestatus=4;
 				break;
-			case 4:
+			case 4:	/*顯示ready50圈*/
 				rewind(fp[0]);
 				fprintf(fp[0],"READY%c",'\0');
 				rewind(fp[0]);
 				fgets(sbuf,39,fp[0]);
 				outtextxy(290,150,sbuf);
-				AP.active=2;
+				/*AP.active=2;	飛機可發射*/
 				if(statuscounter==200)
 				gamestatus=5;
 				break;
@@ -296,13 +314,13 @@ main()
 					r=HMB;
 					addscore=100;
 				}
+				AP.active=2;
 				gamestatus=6;
 				break;
 			case 6:
 				if(!r)
 				{
 					gamestatus=7;
-					r=0;
 				}
 				break;
 			case 7:
@@ -333,16 +351,24 @@ main()
 					k+=BEES[j].atc;
 				}
 				if(statuscounter>100&&!k)
+				{
 					gamestatus=0;
-				if(!AP.life&&statuscounter>100)
-					gamestatus=9;
+					if(!r)
+					{
+						gamestatus=7;
+					}
+					if(!AP.life)
+					{
+						gamestatus=9;
+					}
+				}
 				break;
 			case 9:
 				rewind(fp[0]);
 				fprintf(fp[0],"GAME OVER%c",'\0');
 				rewind(fp[0]);
 				fgets(sbuf,39,fp[0]);
-				outtextxy(290,150,sbuf);
+				outtextxy(270,170,sbuf);
 			default:
 				break;
 		}
@@ -363,8 +389,8 @@ main()
 			SHOOT2();                       /*蜜蜂射擊*/
 
 		GUNMOV();                       /*子彈移動*/
-		BOOM();
-		if(weapon.life)					/*判斷是否擊中*/
+		BOOM();			/*判斷是否擊中*/
+		if(weapon.life)
 			WEAPON();
 		if(kbhit())
 		{
@@ -446,8 +472,7 @@ void ATC(void)
                           }
                           break;
                }
-               sp1=1;                             /*設定音效*/
-               sp2=0;
+              SOUND_CALL(1);                             /*設定音效*/
                return;
           }
      }
@@ -523,9 +548,9 @@ void SHOOT1(void)   /*飛機子彈*/
 		GUN1[p].tx=AP.x;
 		GUN1[p].ty=GUNTOP-1000;
 	}
-     sp1=3;               /*設定音效*/
-	sp2=0;
-	addscore--;
+	SOUND_CALL(3);               /*設定音效*/
+	if(addscore>1)
+		addscore--;
 }
 
 void MOVE_ADD()         /*蜜蜂移動左右迴圈*/
@@ -598,6 +623,8 @@ void INPUT(void)            /*輸入*/
           case 's':           /*聲音開關*/
                soun=!soun;
                nosound();
+	sp1=0;
+	sp2=0;
                break;
           case 'p':           /*暫停*/
 			nosound();
@@ -607,7 +634,7 @@ void INPUT(void)            /*輸入*/
 			fprintf(fp[0],"TEE TIME!%c",'\0');
 			rewind(fp[0]);
 			fgets(sbuf,39,fp[0]);
-			outtextxy(270,170,sbuf);
+			outtextxy(270,190,sbuf);
 			setvisualpage(0);
                getch();
                break;
@@ -724,13 +751,12 @@ void BOOM()              /*擊中判斷*/
                               {
 							r--;
 							BEES[b].atc=0;
-							score+=addscore;  /*加分*/
+							SCORE_UP();  /*加分*/
 							if(BEES[b].t==2)
 								MAKE_WEAPON(4,BEES[b].x,BEES[b].y);
                               }
                               GUN1[a].life=0;   /*清除子彈*/
-                              sp1=2;            /*打死的音效*/
-                              sp2=0;
+                              SOUND_CALL(2);            /*打死的音效*/
                          }
                     }
                     if(GUN1[a].l==1)            /*雷射*/
@@ -746,17 +772,15 @@ void BOOM()              /*擊中判斷*/
                                         BEES[b].life=0;
 								r--;
 								BEES[b].atc=0;
-								score+=addscore;
+								SCORE_UP();  /*加分*/
 								if(BEES[b].t==2)
 									MAKE_WEAPON(4,BEES[b].x,BEES[b].y);
-                                        sp1=2;
-                                        sp2=0;
+                                        SOUND_CALL(2);
                                    }
                                    else                /*沒死*/
                                    {
                                         GUN1[a].life=0;  /*吸收雷射*/
-                                        sp1=4;
-                                        sp2=0;
+                                        SOUND_CALL(4);
                                    }
                               }
                               else  /*打中其他*/
@@ -766,14 +790,13 @@ void BOOM()              /*擊中判斷*/
                                    {
 								r--;
 								BEES[b].atc=0;
-                                        score+=addscore;
-                                        sp1=2;
-                                        sp2=0;
+                                        SCORE_UP();  /*加分*/
+                                       SOUND_CALL(2);
                                    }
                               }
                          }
                     }
-                    if(GUN1[a].l==2)  /*追蹤飛彈*/
+                   /* if(GUN1[a].l==2)  追蹤飛彈
                     {
                          if((BEES[b].y>=GUN1[a].y)&&(BEES[b].y<=GUN1[a].y+10)&&
                             (GUN1[a].x+5>=BEES[b].x-9)&&(GUN1[a].x-5<=BEES[b].x+10))
@@ -783,13 +806,12 @@ void BOOM()              /*擊中判斷*/
                               {
 							r--;
 							BEES[b].atc=0;
-                                   score+=addscore;
+						    SCORE_UP();  加分
                               }
                               GUN1[a].life=0;
-                              sp1=2;
-                              sp2=0;
+                             SOUND_CALL(2);
                          }
-                    }
+                    }*/
                }
           }
 	}
@@ -821,7 +843,7 @@ void BOOM()              /*擊中判斷*/
 					{
 						r--;
 						BEES[a].atc=0;
-						score+=addscore;
+						SCORE_UP();  /*加分*/
 					}
 					APBOOM();
 					return;
@@ -838,19 +860,22 @@ void APBOOM(void)        /*爆炸*/
 	AP.active=0;
 	l=0;
 	hfapm=3;
-	sp1=5;
-	sp2=0;
+	SOUND_CALL(5);
 	return;
 }
 
-void SOUND(void)
+void SOUND(void)	/*聲音處理*/
 {
-     if(sou[sp1][sp2])
+	if(sou[sp1][sp2])
      {
-          sound(sou[sp1][sp2]);
-          sp2++;
+		if(sou[sp1][sp2]==1)
+			nosound();
+		else
+			sound(sou[sp1][sp2]);
+		sp2++;
+
      }
-     else
+	else
      {
           nosound();
           sp1=sp2=0;
@@ -937,11 +962,16 @@ void OUTPUT(void)        /*輸出顯示*/
 	rewind(fp[0]);
 	fgets(sbuf,39,fp[0]);
 	outtextxy(0,0,sbuf);
-	rewind(fp[0]);
+	rewind(fp[0]);  /*顯示支數*/
 	fprintf(fp[0],"PLAYER %d%c",AP.life,'\0');
 	rewind(fp[0]);
 	fgets(sbuf,39,fp[0]);
 	outtextxy(0,10,sbuf);
+	rewind(fp[0]); /*顯示關數*/
+	fprintf(fp[0],"ROUND %d%c",round,'\0');
+	rewind(fp[0]);
+	fgets(sbuf,39,fp[0]);
+	outtextxy(550,0,sbuf);
 }
 
 void STAR(void)
@@ -968,16 +998,15 @@ void STAR(void)
           }
      }
 }
-void WEAPON(void)
+void WEAPON(void)	/*寶物移動、判斷*/
 {
 	int i,w;
 	weapon.y+=3;
 	if(weapon.y>=AP.y)
 	{
-		if((weapon.x>=AP.x-17)&&(weapon.x<=AP.x+17))
+		if((AP.active)&&(weapon.x>=AP.x-17)&&(weapon.x<=AP.x+17))
 		{
-			sp1=4;
-			sp2=2;
+			SOUND_CALL(4);
 			weapon.life=0;
 			switch(weapon.type)
 			{
@@ -1014,7 +1043,7 @@ void WEAPON(void)
 			break;
 	}
 }
-void MAKE_WEAPON(int c,int x,int y)
+void MAKE_WEAPON(int c,int x,int y)	/*寶物產生*/
 {
 	if(!weapon.life)
 	{
@@ -1025,5 +1054,29 @@ void MAKE_WEAPON(int c,int x,int y)
 			weapon.type=random(3);
 			weapon.life=1;
 		}
+	}
+}
+void SCORE_UP(void)
+{
+	int i;
+	long tmp,level=5000;
+	tmp=score;
+	score+=addscore;
+	while(score>=level)
+	{
+		if(tmp<level)
+		{
+			AP.life++;
+			SOUND_CALL(6);
+		}
+		level+=5000;
+	}
+}
+void SOUND_CALL(int s)
+{
+	if(sound_level[sp1]>=sound_level[s])
+	{
+		sp1=s;
+		sp2=0;
 	}
 }
